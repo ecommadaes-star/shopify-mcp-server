@@ -2,13 +2,56 @@ const http = require('http');
 const https = require('https');
 
 const SHOPIFY_SHOP = process.env.SHOPIFY_SHOP || '6c2ddh-sa.myshopify.com';
-const SHOPIFY_TOKEN = process.env.SHOPIFY_TOKEN || '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';
+const SHOPIFY_SECRET = process.env.SHOPIFY_SECRET || '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';
+const CLIENT_ID = process.env.CLIENT_ID || 'ce4eef5fabba9856a433d5b7e863ea52';
 const PORT = process.env.PORT || 8080;
 
-console.log(`Shopify MCP Server läuft auf Port ${PORT}`);
-console.log(`Shop: ${SHOPIFY_SHOP}`);
+let cachedToken = null;
+let tokenExpiry = 0;
+
+async function getAccessToken() {
+  const now = Date.now();
+  if (cachedToken && now < tokenExpiry) return cachedToken;
+
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      client_id: CLIENT_ID,
+      client_secret: SHOPIFY_SECRET,
+      grant_type: 'client_credentials'
+    });
+    const options = {
+      hostname: SHOPIFY_SHOP,
+      path: '/admin/oauth/access_token',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    };
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.access_token) {
+            cachedToken = parsed.access_token;
+            tokenExpiry = now + ((parsed.expires_in || 86400) - 300) * 1000;
+            resolve(cachedToken);
+          } else {
+            reject(new Error('Token-Fehler: ' + data));
+          }
+        } catch (e) { reject(e); }
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
 
 async function shopifyREST(path, method = 'GET', body = null) {
+  const token = await getAccessToken();
   return new Promise((resolve, reject) => {
     const bodyStr = body ? JSON.stringify(body) : null;
     const options = {
@@ -17,13 +60,13 @@ async function shopifyREST(path, method = 'GET', body = null) {
       method,
       headers: {
         'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': SHOPIFY_TOKEN,
+        'X-Shopify-Access-Token': token,
         ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {}),
       },
     };
     const req = https.request(options, (res) => {
       let data = '';
-      res.on('data', (chunk) => { data += chunk; });
+      res.on('data', chunk => { data += chunk; });
       res.on('end', () => {
         try { resolve({ status: res.statusCode, data: JSON.parse(data) }); }
         catch (e) { resolve({ status: res.statusCode, data }); }
@@ -36,6 +79,7 @@ async function shopifyREST(path, method = 'GET', body = null) {
 }
 
 async function shopifyGraphQL(query, variables = {}) {
+  const token = await getAccessToken();
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({ query, variables });
     const options = {
@@ -44,13 +88,13 @@ async function shopifyGraphQL(query, variables = {}) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': SHOPIFY_TOKEN,
+        'X-Shopify-Access-Token': token,
         'Content-Length': Buffer.byteLength(body),
       },
     };
     const req = https.request(options, (res) => {
       let data = '';
-      res.on('data', (chunk) => { data += chunk; });
+      res.on('data', chunk => { data += chunk; });
       res.on('end', () => {
         try { resolve(JSON.parse(data)); }
         catch (e) { reject(e); }
@@ -108,7 +152,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && req.url === '/') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', name: 'Shopify MCP Server', shop: SHOPIFY_SHOP, tools: TOOLS.length }));
+    res.end(JSON.stringify({ status: 'ok', name: 'Shopify MCP Server - Amariel', shop: SHOPIFY_SHOP, tools: TOOLS.length }));
     return;
   }
 
@@ -120,7 +164,7 @@ const server = http.createServer(async (req, res) => {
         const request = JSON.parse(body);
         let response;
         if (request.method === 'initialize') {
-          response = { jsonrpc: '2.0', id: request.id, result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'shopify-mcp', version: '1.0.0' } } };
+          response = { jsonrpc: '2.0', id: request.id, result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'shopify-mcp-amariel', version: '2.0.0' } } };
         } else if (request.method === 'tools/list') {
           response = { jsonrpc: '2.0', id: request.id, result: { tools: TOOLS } };
         } else if (request.method === 'tools/call') {
@@ -148,5 +192,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server bereit auf Port ${PORT}`);
+  console.log(`Shopify MCP Server - Amariel Store`);
+  console.log(`Port: ${PORT} | Shop: ${SHOPIFY_SHOP}`);
 });
