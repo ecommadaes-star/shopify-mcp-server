@@ -1,21 +1,19 @@
 const http = require('http');
 const https = require('https');
 
-const SHOPIFY_SHOP = process.env.SHOPIFY_SHOP;
-const SHOPIFY_TOKEN = process.env.SHOPIFY_TOKEN;
+const SHOPIFY_SHOP = process.env.SHOPIFY_SHOP || '6c2ddh-sa.myshopify.com';
+const SHOPIFY_TOKEN = process.env.SHOPIFY_TOKEN || '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';
 const PORT = process.env.PORT || 8080;
 
-if (!SHOPIFY_SHOP || !SHOPIFY_TOKEN) {
-  console.error('Fehler: SHOPIFY_SHOP und SHOPIFY_TOKEN müssen als Umgebungsvariablen gesetzt sein.');
-  process.exit(1);
-}
+console.log(`Shopify MCP Server läuft auf Port ${PORT}`);
+console.log(`Shop: ${SHOPIFY_SHOP}`);
 
 async function shopifyREST(path, method = 'GET', body = null) {
   return new Promise((resolve, reject) => {
     const bodyStr = body ? JSON.stringify(body) : null;
     const options = {
       hostname: SHOPIFY_SHOP,
-      path: `/admin/api/2026-01${path}`,
+      path: `/admin/api/2024-01${path}`,
       method,
       headers: {
         'Content-Type': 'application/json',
@@ -42,7 +40,7 @@ async function shopifyGraphQL(query, variables = {}) {
     const body = JSON.stringify({ query, variables });
     const options = {
       hostname: SHOPIFY_SHOP,
-      path: '/admin/api/2026-01/graphql.json',
+      path: '/admin/api/2024-01/graphql.json',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -70,19 +68,13 @@ async function handleTool(toolName, args) {
     case 'get_products': return (await shopifyREST(`/products.json?limit=${args.limit || 10}`)).data;
     case 'get_product': return (await shopifyREST(`/products/${args.product_id}.json`)).data;
     case 'create_product': return (await shopifyREST('/products.json', 'POST', { product: args })).data;
-    case 'update_product': {
-      const { product_id, ...updates } = args;
-      return (await shopifyREST(`/products/${product_id}.json`, 'PUT', { product: updates })).data;
-    }
+    case 'update_product': { const { product_id, ...updates } = args; return (await shopifyREST(`/products/${product_id}.json`, 'PUT', { product: updates })).data; }
     case 'get_orders': return (await shopifyREST(`/orders.json?limit=${args.limit || 10}&status=${args.status || 'any'}`)).data;
     case 'get_customers': return (await shopifyREST(`/customers.json?limit=${args.limit || 10}`)).data;
     case 'get_themes': return (await shopifyREST('/themes.json')).data;
     case 'get_pages': return (await shopifyREST('/pages.json')).data;
     case 'create_page': return (await shopifyREST('/pages.json', 'POST', { page: args })).data;
-    case 'update_page': {
-      const { page_id, ...updates } = args;
-      return (await shopifyREST(`/pages/${page_id}.json`, 'PUT', { page: updates })).data;
-    }
+    case 'update_page': { const { page_id, ...updates } = args; return (await shopifyREST(`/pages/${page_id}.json`, 'PUT', { page: updates })).data; }
     case 'get_collections': return (await shopifyREST('/custom_collections.json')).data;
     case 'get_inventory': return (await shopifyREST('/inventory_levels.json')).data;
     case 'graphql_query': return await shopifyGraphQL(args.query, args.variables || {});
@@ -94,8 +86,8 @@ const TOOLS = [
   { name: 'get_shop_info', description: 'Shopify Shop-Informationen abrufen', inputSchema: { type: 'object', properties: {} } },
   { name: 'get_products', description: 'Produkte abrufen', inputSchema: { type: 'object', properties: { limit: { type: 'number' } } } },
   { name: 'get_product', description: 'Einzelnes Produkt abrufen', inputSchema: { type: 'object', properties: { product_id: { type: 'string' } }, required: ['product_id'] } },
-  { name: 'create_product', description: 'Neues Produkt erstellen', inputSchema: { type: 'object', properties: { title: { type: 'string' }, body_html: { type: 'string' }, vendor: { type: 'string' } }, required: ['title'] } },
-  { name: 'update_product', description: 'Produkt aktualisieren', inputSchema: { type: 'object', properties: { product_id: { type: 'string' }, title: { type: 'string' }, body_html: { type: 'string' } }, required: ['product_id'] } },
+  { name: 'create_product', description: 'Neues Produkt erstellen', inputSchema: { type: 'object', properties: { title: { type: 'string' }, body_html: { type: 'string' } }, required: ['title'] } },
+  { name: 'update_product', description: 'Produkt aktualisieren', inputSchema: { type: 'object', properties: { product_id: { type: 'string' }, title: { type: 'string' } }, required: ['product_id'] } },
   { name: 'get_orders', description: 'Bestellungen abrufen', inputSchema: { type: 'object', properties: { limit: { type: 'number' }, status: { type: 'string' } } } },
   { name: 'get_customers', description: 'Kunden abrufen', inputSchema: { type: 'object', properties: { limit: { type: 'number' } } } },
   { name: 'get_themes', description: 'Themes abrufen', inputSchema: { type: 'object', properties: {} } },
@@ -127,7 +119,6 @@ const server = http.createServer(async (req, res) => {
       try {
         const request = JSON.parse(body);
         let response;
-
         if (request.method === 'initialize') {
           response = { jsonrpc: '2.0', id: request.id, result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'shopify-mcp', version: '1.0.0' } } };
         } else if (request.method === 'tools/list') {
@@ -142,7 +133,6 @@ const server = http.createServer(async (req, res) => {
         } else {
           response = { jsonrpc: '2.0', id: request.id, error: { code: -32601, message: 'Method not found' } };
         }
-
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(response));
       } catch (err) {
@@ -158,6 +148,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Shopify MCP Server läuft auf Port ${PORT}`);
-  console.log(`Shop: ${SHOPIFY_SHOP}`);
+  console.log(`Server bereit auf Port ${PORT}`);
 });
