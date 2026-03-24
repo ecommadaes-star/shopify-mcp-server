@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: shopify-mcp-server
+    env: node
+    buildCommand: echo "No build needed"
+    startCommand: node server.js
+    envVars:
+      - key: SHOPIFY_SHOP
+        sync: false
+      - key: SHOPIFY_TOKEN
+        sync: false
